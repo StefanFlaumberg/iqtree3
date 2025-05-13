@@ -5,18 +5,9 @@
  *      Author: minh
  */
 
-#include "modelmarkov.h"
-#include "modeldna.h"
-#include "modeldnaerror.h"
-#include "modelprotein.h"
-#include "modelbin.h"
-#include "modelcodon.h"
-#include "modelmorphology.h"
-#include "modelset.h"
 #include "modelmixture.h"
-#include "modelpomo.h"
+#include "modelfactory.h"
 //#include "phylokernelmixture.h"
-#include "modelpomomixture.h"
 
 using namespace std;
 
