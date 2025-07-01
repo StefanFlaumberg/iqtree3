@@ -199,8 +199,7 @@ void AliSimulatorHeterogeneity::extractPatternPosteriorFreqsAndModelProb()
 {
     int nptn = tree->aln->getNPattern();
     int nmixture = tree->getModel()->getNMixtures();
-    if (!ptn_state_freq)
-    {
+    if (!ptn_state_freq) {
         // get pattern-specific state frequencies (ptn_state_freq)
         SiteFreqType tmp_site_freq_type = tree->params->site_state_freq_type;
         tree->params->site_state_freq_type = WSF_POSTERIOR_MEAN;
@@ -209,11 +208,16 @@ void AliSimulatorHeterogeneity::extractPatternPosteriorFreqsAndModelProb()
         ASSERT(ptn_state_freq);
         tree->params->site_state_freq_type = tmp_site_freq_type;
         // get pattern-specific posterior model probability
-        int nptn_times_nmixture = nptn * nmixture;
-        ptn_model_dis = new double[nptn_times_nmixture];
-        memcpy(ptn_model_dis, tree->getPatternLhCatPointer(), nptn_times_nmixture * sizeof(double));
+        ptn_model_dis = new double[nptn*nmixture];
+        memcpy(ptn_model_dis, tree->getPatternLhCatPointer(), nptn*nmixture*sizeof(double));
         // convert ptn_model_dis to accummulated matrix
-        convertProMatrixIntoAccumulatedProMatrix(ptn_model_dis, nptn, nmixture);
+        convertProMatrixIntoAccumulatedProMatrix(ptn_model_dis, nptn, nmixture, false);
+        // normalize ptn_model_dis
+        for (int i = 0; i < nptn; ++i) {
+            double inverse_sum = 1.0 / ptn_model_dis[i*nmixture + nmixture - 1];
+            for (int j = 0; j < nmixture; ++j)
+                ptn_model_dis[i*nmixture + j] *= inverse_sum;
+        }
     }
 }
 
@@ -455,10 +459,9 @@ void AliSimulatorHeterogeneity::getSiteSpecificRatesDiscrete(vector<short int> &
 */
 void AliSimulatorHeterogeneity::getSiteSpecificPosteriorRateHeterogeneity(vector<short int> &new_site_specific_rate_index, vector<double> &site_specific_rates, int sequence_length, IntVector &site_to_patternID)
 {
-    int num_rates = rate_heterogeneity->getNDiscreteRate();
-    
-    if (pattern_rates.size() == 0)
-    {
+    int nptn = tree->aln->getNPattern();
+    int ncat = rate_heterogeneity->getNDiscreteRate();
+    if (pattern_rates.size() == 0) {
         // get pattern-specific rate (ptn_rate)
         SiteRateType tmp_site_rate_type = tree->params->site_rate_type;
         tree->params->site_rate_type = WSR_POSTERIOR_MEAN;
@@ -466,33 +469,21 @@ void AliSimulatorHeterogeneity::getSiteSpecificPosteriorRateHeterogeneity(vector
         ASSERT(pattern_rates.size());
         tree->params->site_rate_type = tmp_site_rate_type;
         // extract pattern rate distribution if the user wants to sample a rate for each site from posterior distribution
-        if (tree->params->alisim_rate_heterogeneity == POSTERIOR_DIS)
-        {
-            // init variables
-            int num_ptns = pattern_rates.size();
-            int num_ptns_times_num_rates = num_ptns * num_rates;
-            ptn_accumulated_rate_dis = new double[num_ptns_times_num_rates];
-            
-            // clone ptn_rate_dis
-            memcpy(ptn_accumulated_rate_dis, tree->getPatternLhCatPointer(), num_ptns_times_num_rates * sizeof(double));
-        
+        if (tree->params->alisim_rate_heterogeneity == POSTERIOR_DIS) {
+            // get pattern-specific posterior rate category probability
+            ptn_accumulated_rate_dis = new double[nptn*ncat];
+            memcpy(ptn_accumulated_rate_dis, tree->getPatternLhCatPointer(), nptn*ncat*sizeof(double));
             // convert ptn_rate_dis into ptn_accumulated_rate_dis
-            convertProMatrixIntoAccumulatedProMatrix(ptn_accumulated_rate_dis, num_ptns, num_rates, false);
-            
+            convertProMatrixIntoAccumulatedProMatrix(ptn_accumulated_rate_dis, nptn, ncat, false);
             // normalize ptn_accumulated_rate_dis
-            int i_times_num_rates = 0;
-            int num_rates_minus_one = num_rates - 1;
-            double invar_prob = tree->getRate()->getPInvar();
-            double max_accumulated_prob = 1 - invar_prob;
-            for (int i = 0; i < num_ptns; i++, i_times_num_rates += num_rates)
-            {
-                double inverse_row_sum = max_accumulated_prob / ptn_accumulated_rate_dis[i_times_num_rates + num_rates_minus_one];
-                for (int j = 0; j < num_rates; j++)
-                    ptn_accumulated_rate_dis[i_times_num_rates + j] *= inverse_row_sum;
+            for (int i = 0; i < nptn; ++i) {
+                double max_accumulated_proba = 1.0 - tree->ptn_invar[i];
+                double inverse_sum = max_accumulated_proba / ptn_accumulated_rate_dis[i*ncat + ncat - 1];
+                for (int j = 0; j < ncat; ++j)
+                    ptn_accumulated_rate_dis[i*ncat + j] *= inverse_sum;
             }
         }
     }
-    
     // init site-specific posterior rate
     // extract posterior mean rate from pattern
     if (tree->params->alisim_rate_heterogeneity == POSTERIOR_MEAN)
@@ -510,10 +501,9 @@ void AliSimulatorHeterogeneity::getSiteSpecificPosteriorRateHeterogeneity(vector
         {
             // extract pattern id from site id
             int site_pattern_id = site_to_patternID[i];
-            int starting_index = site_pattern_id * num_rates;
+            int starting_index = site_pattern_id * ncat;
             double rand_num = random_double();
-            int rate_cat = binarysearchItemWithAccumulatedProbabilityMatrix(ptn_accumulated_rate_dis, rand_num, starting_index, starting_index + num_rates - 1, starting_index);
-            
+            int rate_cat = binarysearchItemWithAccumulatedProbabilityMatrix(ptn_accumulated_rate_dis, rand_num, starting_index, starting_index + ncat - 1, starting_index);
             // if rate_category == -1 <=> this site is invariant
             if (rate_cat == -1)
             {
@@ -527,7 +517,6 @@ void AliSimulatorHeterogeneity::getSiteSpecificPosteriorRateHeterogeneity(vector
                 new_site_specific_rate_index[i] = rate_cat;
             }
         }
-    
     // delete ptn_accumulated_rate_dis if we don't need to use it for handling insertions (in Indels)
     if (ptn_accumulated_rate_dis && tree->params->alisim_insertion_ratio + tree->params->alisim_deletion_ratio == 0)
     {
