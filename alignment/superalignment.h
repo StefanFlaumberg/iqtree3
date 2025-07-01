@@ -140,11 +140,14 @@ public:
             extract sub-alignment of a sub-set of sequences
             @param aln original input alignment
             @param seq_id ID of sequences to extract from
-            @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
-            @param min_taxa only keep alignment that has >= min_taxa sequences
-            @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+            @param min_true_chars the minimum number of non-gap characters in a site,
+                                  delete the site if true_chars < min_true_chars
+            @param min_taxa (for SuperAlignment) keep partitions only with >= min_taxa sequences
+            @param[out] kept_partitions zero index if a simple alignment is kept or
+                                        indices of kept partitions for a superalignment
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL);
+    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_chars,
+                                     int min_taxa = 0, IntVector *kept_partitions = NULL);
 
     /**
         extract a subset of partitions to form a new SuperAlignment object

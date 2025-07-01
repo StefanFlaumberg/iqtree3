@@ -909,55 +909,53 @@ void SuperAlignment::linkSubAlignment(int part) {
 	}
 }
 
-void SuperAlignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa, IntVector *kept_partitions) {
-	ASSERT(aln->isSuperAlignment());
-	SuperAlignment *saln = (SuperAlignment*)aln;
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-
-    for (auto it = seq_id.begin(); it != seq_id.end(); it++) {
-        ASSERT(*it >= 0 && *it < aln->getNSeq());
-        seq_names.push_back(aln->getSeqName(*it));
+void SuperAlignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_chars,
+                                         int min_taxa, IntVector *kept_partitions)
+{
+    ASSERT(aln->isSuperAlignment());
+    SuperAlignment *saln = (SuperAlignment*)aln;
+    for (IntVector::iterator it = seq_id.begin(); it != seq_id.end(); ++it) {
+        ASSERT(*it >= 0 && *it < saln->getNSeq());
+        seq_names.push_back(saln->getSeqName(*it));
     }
-
-	// BUG HERE!
-	//Alignment::extractSubAlignment(aln, seq_id, 0);
-
-	taxa_index.resize(getNSeq());
-	for (size_t i = 0; i < getNSeq(); ++i) {
-		taxa_index[i].resize(saln->partitions.size(), -1);
+    name = saln->name;
+    model_name = saln->model_name;
+    sequence_type = saln->sequence_type;
+    position_spec = saln->position_spec;
+    aln_file = saln->aln_file;
+    taxa_index.resize(getNSeq());
+    for (size_t i = 0; i < getNSeq(); ++i) {
+        taxa_index[i].resize(saln->partitions.size(), -1);
     }
-
-	int part = 0;
-//	partitions.resize(saln->partitions.size());
+    int part = 0;
     partitions.resize(0);
-	for (vector<Alignment*>::iterator ait = saln->partitions.begin(); ait != saln->partitions.end(); ait++, part++) {
-		IntVector sub_seq_id;
-		for (IntVector::iterator it = seq_id.begin(); it != seq_id.end(); it++)
-			if (saln->taxa_index[*it][part] >= 0)
-				sub_seq_id.push_back(saln->taxa_index[*it][part]);
+    for (vector<Alignment*>::iterator ait = saln->partitions.begin(); ait != saln->partitions.end(); ++ait, ++part) {
+        // decide which sequences to sample for the partition
+        IntVector sub_seq_id;
+        for (IntVector::iterator it = seq_id.begin(); it != seq_id.end(); it++) {
+            if (saln->taxa_index[*it][part] >= 0)
+                sub_seq_id.push_back(saln->taxa_index[*it][part]);
+        }
         if (sub_seq_id.size() < min_taxa)
             continue;
-		Alignment *subaln = new Alignment;
-		subaln->extractSubAlignment(*ait, sub_seq_id, 0);
-		partitions.push_back(subaln);
-		linkSubAlignment(partitions.size()-1);
-        if (kept_partitions) kept_partitions->push_back(part);
-//		cout << subaln->getNSeq() << endl;
-//		subaln->printPhylip(cout);
-	}
-
+        // create and link a new alignment for the partition
+        IntVector kept_subaln;
+        Alignment *subaln = new Alignment;
+        subaln->extractSubAlignment(*ait, sub_seq_id, min_true_chars, 0, *kept_subaln);
+        if (kept_subaln.size()) { // subaln might not be taken if min_true_chars is used
+            partitions.push_back(subaln);
+            linkSubAlignment(partitions.size() - 1);
+            if (kept_partitions)
+                kept_partitions->push_back(part);
+        }
+    }
     if (partitions.size() < saln->partitions.size()) {
         for (size_t i = 0; i < getNSeq(); ++i) {
             taxa_index[i].resize(partitions.size());
         }
     }
-
-	// now build the patterns based on taxa_index
-	buildPattern();
+    // now build the patterns based on taxa_index
+    buildPattern();
 }
 
 SuperAlignment *SuperAlignment::extractPartitions(IntVector &part_id) {

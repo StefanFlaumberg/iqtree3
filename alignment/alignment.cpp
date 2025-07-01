@@ -3424,9 +3424,11 @@ void Alignment::printAlignment(InputType format, ostream &out, const char* file_
     }
 }
 
-void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa, IntVector *kept_partitions) {
-    IntVector::iterator it;
-    for (it = seq_id.begin(); it != seq_id.end(); it++) {
+void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_chars,
+                                    int min_taxa, IntVector *kept_partitions)
+{
+    (void)(min_taxa); // useful for superalignment only
+    for (IntVector::iterator it = seq_id.begin(); it != seq_id.end(); ++it) {
         ASSERT(*it >= 0 && *it < aln->getNSeq());
         seq_names.push_back(aln->getSeqName(*it));
     }
@@ -3438,7 +3440,7 @@ void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_t
     num_states = aln->num_states;
     seq_type = aln->seq_type;
     STATE_UNKNOWN = aln->STATE_UNKNOWN;
-	genetic_code = aln->genetic_code;
+    genetic_code = aln->genetic_code;
     if (seq_type == SEQ_CODON) {
     	codon_table = new char[num_states];
     	memcpy(codon_table, aln->codon_table, num_states);
@@ -3448,44 +3450,57 @@ void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_t
     site_pattern.resize(aln->getNSite(), -1);
     clear();
     pattern_index.clear();
-    size_t removed_sites = 0;
     VerboseMode save_mode = verbose_mode;
     verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    
+    size_t removed_sites = 0;
+    size_t total_chars = seq_id.size();
     progress_display progress(aln->getNSite(), "Identifying sites to remove", "examined", "site");
-    size_t oldPatternCount = size(); //JB 27-Jul-2020 Parallelized
-    int    siteMod = 0; //site # modulo 100.
-    size_t seqCount = seq_id.size();
+    int siteMod = 0; // number of examined sites modulo 100
     for (size_t site = 0; site < aln->getNSite(); ++site) {
-        iterator pit = aln->begin() + (aln->getPatternID(site));
+        size_t ptn = aln->getPatternID(site);
+        iterator pit = aln->begin() + ptn;
         Pattern pat;
         for (it = seq_id.begin(); it != seq_id.end(); ++it) {
-            pat.push_back ( (*pit)[*it] );
+            pat.push_back((*pit)[*it]);
         }
         size_t gap_chars = pat.computeGapChar(num_states, STATE_UNKNOWN);
-        size_t true_char = seqCount - gap_chars;
-        if (true_char < min_true_char) {
+        size_t true_chars = total_chars - gap_chars;
+        if (true_chars < min_true_chars) {
             removed_sites++;
-        }
-        else {
+        } else {
             bool gaps_only = false;
-            addPatternLazy(pat, site-removed_sites, 1, gaps_only); //JB 27-Jul-2020 Parallelized
+            bool added = addPatternLazy(pat, site - removed_sites, 1, gaps_only); //JB 27-Jul-2020 Parallelized
+            if (aln->isSSF() && added) {
+                // a new pattern is added, copy its state frequency vector
+                double *state_freqs = new double[num_states];
+                memcpy(state_freqs, aln->ptn_state_freq[ptn], num_states*sizeof(double));
+                ptn_state_freq.push_back(state_freqs);
+            }
+            if (aln->isSSR() && added) {
+                // a new pattern is added, copy its rate scaler
+                double rate_scaler = aln->ptn_rate_scaler[ptn];
+                ptn_rate_scaler.push_back(rate_scaler);
+            }
         }
+        // site is examined, add to progress
+        siteMod++;
         if (siteMod == 100 ) {
             progress += 100;
-            siteMod  = 0;
+            siteMod = 0;
         }
-        ++siteMod;
     }
     progress.done();
-    updatePatterns(oldPatternCount); //JB 27-Jul-2020 Parallelized
+    updatePatterns(0); //JB 27-Jul-2020 Parallelized
     site_pattern.resize(aln->getNSite() - removed_sites);
     verbose_mode = save_mode;
     countConstSite();
 //    buildSeqStates();
     ASSERT(size() <= aln->size());
-    if (kept_partitions)
-        kept_partitions->push_back(0);
+    if (kept_partitions) {
+        if (size()) kept_partitions->push_back(0);
+    } else if (!size()) {
+        ASSERT(false); // not expected unless is tested for
+    }
 }
 
 
